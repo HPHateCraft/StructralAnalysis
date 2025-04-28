@@ -1,27 +1,57 @@
-import torch
+from functools import cached_property
+
+from Nodes import Nodes
+from Materials import Materials
+from Sections import Sections
+from LineElements import LineElements
+from Loads import Loads, LoadSolver 
+from StiffnessMatrix import StiffnessMatrix
+from TransMatrix import TransMatrix
+
+import numpy as np
+from numpy.typing import NDArray
 
 class Solver:
     
-    def __init__(self):
-        pass
-
-    def solveGlobalNodalDisplacement(self, globalStructureMatrix: torch.Tensor, globalNodalVector: torch.Tensor):
-        return torch.linalg.solve(globalStructureMatrix, globalNodalVector)
+    def __init__(self, nodes: Nodes, elements: LineElements, stiffness_matrix: StiffnessMatrix, load_solver: LoadSolver, trans_matrix: TransMatrix):
+        self._nodes = nodes
+        self._elements = elements
+        self._stiffness_matrix = stiffness_matrix
+        self._load_solver = load_solver
+        self._trans_matrix = trans_matrix
+           
+    def solve(self):
+        self._load_solver.solve() 
+        self._solve_structure_displacement()
+        
+    def _solve_structure_displacement(self):
+        self._stiffness_matrix.structure_displacement_vector = np.linalg.solve(self._stiffness_matrix.structure_stiffness_matrix, self._stiffness_matrix.structure_force_vector)
     
-    def nodesGlobalDisplacment(self, numActiveNodes: torch.Tensor, numActiveNodesDof: int, activeNodesCodeNum: torch.Tensor, globalNodalDisplacement: torch.Tensor) -> torch.Tensor:
-        v = torch.zeros((numActiveNodes, 6), dtype=torch.float64)
-        condition = activeNodesCodeNum < numActiveNodesDof
-        v[condition] = globalNodalDisplacement[activeNodesCodeNum[condition]]
-        return v
+    @cached_property
+    def global_nodal_displacment(self):
+        self._stiffness_matrix.global_nodal_displacment[self._nodes.dof] = self._stiffness_matrix.structure_displacement_vector
+        return self._stiffness_matrix.global_nodal_displacment
     
-    def elementsNodesGlobalDisplacment(self, nodesGlobalDisplacment: torch.Tensor, elementsNodesIndices: torch.Tensor):
-        return nodesGlobalDisplacment[elementsNodesIndices].flatten(1)
+    @cached_property
+    def elements_global_nodal_displacement(self):
+        return np.reshape(self.global_nodal_displacment[self._elements.nodes_indices], (self._elements.num_elements, 12))
+    
+    @cached_property
+    def elements_local_nodal_displacement(self):
+        return np.einsum('nij,nj->ni', self._trans_matrix.trans_matrix_12x12, self.elements_global_nodal_displacement)
+    
+    @cached_property
+    def elements_local_nodal_reaction(self):
+        return np.einsum('nij,nj->ni', self._stiffness_matrix.local_stiffness_matrix, self.elements_local_nodal_displacement) - self._stiffness_matrix.elements_local_nodal_vector
 
-    def elementsNodesLocalDisplacment(self, elementsNodesGlobalDisplacment: torch.Tensor, transMatrix12x12: torch.Tensor):
-        return torch.einsum('nij,nj->ni', transMatrix12x12, elementsNodesGlobalDisplacment)
-
-    def elementsNodesLocalReaction(self, localK: torch.Tensor, elementsNodesLocalDisplacment: torch.Tensor, elementLocalNodalVector: torch.Tensor):
-        return torch.einsum('nij,nj->ni', localK, elementsNodesLocalDisplacment) - elementLocalNodalVector
-
-    def elementsNodesGlobalReaction(self, globalK: torch.Tensor, elementsNodesGlobalDisplacment: torch.Tensor, elementGlobalNodalVector: torch.Tensor):
-        return torch.einsum('nij,nj->ni', globalK, elementsNodesGlobalDisplacment) - elementGlobalNodalVector
+    @cached_property
+    def elements_global_nodal_reaction(self):
+        return np.einsum('nij,nj->ni', self._trans_matrix.trans_matrix_12x12_T, self.elements_local_nodal_reaction)
+    
+    @cached_property
+    def nodal_global_reaction(self):
+        r = self._stiffness_matrix.nodal_Vector()
+        np.add.at(r, self._elements.nodes_indices[:, 0], self.elements_global_nodal_reaction[:, :6])
+        np.add.at(r, self._elements.nodes_indices[:, 1], self.elements_global_nodal_reaction[:, 6:])
+        return r
+         

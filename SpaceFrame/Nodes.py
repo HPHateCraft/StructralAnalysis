@@ -1,171 +1,101 @@
-import torch
+from functools import cached_property
+import bisect
 
-class GlobalCoord:
-    """
-    The global coordinate system is a right-hand coordinate system.
-      
-    Vector Product:
-    ---------------
-        e2 x e3 = e1
-        e3 x e1 = e2
-        e1 x e2 = e3
-        
-        e1 = [1, 0, 0]
-        e2 = [0, 1, 0]
-        e3 = [0, 0, 1]
-
-    Global Coordinate System:
-    ------------------
-        ```
-               Y (e2)
-               |
-               |
-               |
-               |
-               |_ _ _ _ _ _ X (e1)
-               /        
-              /
-             /
-            /   
-            Z (e3)
-        ```
-    """
-    ...
-
+import numpy as np
+from numpy.typing import NDArray 
 
 class Nodes:
-    """
-    A class to manage nodes and their degrees of freedom (DOF) in a 3D space.
-    
-    **Definition:**
-    ---------------
-    - A node in 3D space is defined by its global coordinates **[X, Y, Z]**.
-    - Each node has **6 degrees of freedom (DOF)**:  
-      - **Translations**: [UX, UY, UZ] (Displacements along X, Y, Z)  
-      - **Rotations**: [RX, RY, RZ] (Rotations about X, Y, Z)  
-
-    **References:**
-    ---------------
-    - The coordinate system follows the **right-hand Cartesian system** (See `GlobalCoord` for details).
-    """
     
     def __init__(self) -> None:
-        self._nodes = []
-        self._dof   = []
+        self._ids: list[int] = []
+        self._id: int = 0
+
+        self._coord: list[NDArray[np.float64]] = []
+        self._dof: list[NDArray[np.bool_]] = []
         
-    def addNodeCoord(self, X : float, Y : float, Z : float) -> None:
-        """
-        Adds a node to the global coordinate system.
+        self._coord_cached: NDArray[np.float64] | None = None
+        self._dof_cached: NDArray[np.bool_] | None = None
         
-        When adding a node all DOF corospond to the node are set to True (free) by default.
+    def _generate_id(self):
+        _id = self._id
+        self._ids.append(_id)
+        self._id += 1
+        return _id
+    
+    def _validate_coord(self, coord: list[float]):
+        for i in coord:
+            if not isinstance(i, float):
+                raise TypeError(f"Expected {float}. Got {type(i)}")
         
-        **Parameters:**
-        --------------
-        - **X** (*float*): Coordinate along the global X-axis.
-        - **Y** (*float*): Coordinate along the global Y-axis.
-        - **Z** (*float*): Coordinate along the global Z-axis.
-
-        **Raises:**
-        ----------
-        - `ValueError`: If the node already exists.
-
-        **Example Usage:**
-        ------------------
-        ```python
-        nodes = Nodes()
-        nodes.addNodeCoord(1.0, 2.0, 3.0)
-        ```
-        """
-
-        node = [X, Y, Z]
-
-        if node in self._nodes:
-            raise ValueError(f"Node {node} already exists.")
-            
-        self._nodes.append(node)
-        self._dof.append([True, True, True, True, True, True])
+        if coord in self._coord:
+            raise ValueError(f"Attempted to assign two nodes with the same coordinates.")
     
-    def getNodesCoord(self) -> torch.Tensor:
-        """
-        Returns the coordinates of all nodes in the global coordinate system.
-
-        The coordinates are returned as a 2D tensor of shape `(n, 3)`, where `n` 
-        is the number of nodes.
-
-        **Returns:**
-        -----------
-        - `torch.Tensor`: A tensor of shape `(n, 3)` containing the coordinates 
-        of all nodes in the system, with `dtype=torch.float64`.
-
-        **Example Usage:**
-        ------------------
-        ```python
-        nodes = Nodes()
-        nodes.addNodeCoord(1.0, 2.0, 3.0)
-        nodes.addNodeCoord(4.0, 5.0, 6.0)
-        coords = nodes.getNodesCoord()
-        print(coords)  # Output: tensor([[1., 2., 3.], [4., 5., 6.]], dtype=torch.float64)
-        ```
-        """
-        return torch.tensor(self._nodes, dtype=torch.float64)
+    def _validate_dof(self, dof: list[bool]):
+        for i in dof:
+            if not isinstance(i, bool):
+                raise TypeError(f"Expected {bool}. Got {type(i)}")
     
-    def getDof(self) -> torch.Tensor:
-        """
-        Returns the degrees of freedom (DOF) for all nodes as a boolean tensor.
-
-        Each node has **6 degrees of freedom (DOF)**:  
-        - **Translations**: [UX, UY, UZ] (Displacements along X, Y, Z)  
-        - **Rotations**: [RX, RY, RZ] (Rotations about X, Y, Z)  
-
-        The DOF tensor indicates whether each degree of freedom is active (`True`) or 
-        constrained (`False`). The tensor has a shape of `(n, 6)`, where `n` is the 
-        number of nodes, and each node has 6 degrees of freedom.
-
-        **Returns:**
-        -----------
-        - `torch.Tensor`: A boolean tensor of shape `(n, 6)` indicating the status of 
-          each degree of freedom, with `dtype=torch.bool`.
-
-        **Example Usage:**
-        ------------------
-        ```python
-        nodes = Nodes()
-        nodes.addNodeCoord(1.0, 2.0, 3.0)  # Adds a node with all DOF set to True
-        nodes.addNodeCoord(4.0, 5.0, 6.0)  # Adds a node with all DOF set to True
-        dof = nodes.getDof()
-        print(dof)  # Output: tensor([[True, True, True, True, True, True], [True, True, True, True, True, True]], dtype=torch.bool)
-        ```
-        """
-        return torch.tensor(self._dof, dtype=torch.bool)
-    
-    def modifyDof(self, nodeIndex : int, UX : bool, UY : bool, UZ : bool, RX : bool, RY : bool, RZ : bool) -> None:
-        """
-        Modifies the degrees of freedom (DOF) for a specific node.
-
-        **Parameters:**
-        --------------
-        - **nodeIndex** (*int*): The index of the node whose DOF are to be modified.  
-        - **UX, UY, UZ** (*bool*): Status of the translation DOF along X, Y, and Z axes.  
-        - **RX, RY, RZ** (*bool*): Status of the rotation DOF about X, Y, and Z axes.  
-
-        **Example Usage:**
-        ------------------
-        ```python
-        nodes = Nodes()
-        nodes.addNodeCoord(1.0, 2.0, 3.0)  # Adds a node
-        nodes.addNodeCoord(4.0, 5.0, 6.0)  # Adds another node
-
-        # Modify DOF for the first node (index 0)
-        nodes.modifyDof(0, UX=True, UY=False, UZ=True, RX=False, RY=True, RZ=False)
-
-        # Retrieve DOF
-        dof = nodes.getDof()
-        print(dof)  # Output: tensor([[True, False, True, False, True, False], [True, True, True, True, True, True]], dtype=torch.bool)
-        ```
-        """
-        self._dof[nodeIndex] = [UX, UY, UZ, RX, RY, RZ]
-  
-    def nodesSprings(self, nodeIndex : int, UX: float, UY: float, UZ: float, RX: float, RY: float, RZ: float):
+    def _clear_cache(self):
+        self._coord_cached = None
+        self._dof_cached = None
         
-        return
+    def find_index_by_id(self, id_: int):
+        index = bisect.bisect_left(self._ids, id_)
+        if index < len(self._ids) and self._ids[index] == id_:
+            return index  
+        else:
+            raise ValueError(f"Node with id: {id_} doesn't exist.")
     
+    def generate_node(self, x: float, y: float, z: float, ux: bool=True, uy: bool=True, uz: bool=True, rx: bool=True, ry: bool=True, rz: bool=True): 
+        coord = np.array([x, y, z], dtype=np.float64)
+        dof = np.array([ux, uy, uz, rx, ry, rz], dtype=np.bool_)
+        
+        self._clear_cache()
+        id_ = self._generate_id()
+        self._coord.append(coord)
+        self._dof.append(dof)
+        
+        return id_
+        
+    @cached_property
+    def ids(self):
+        return self._ids
+
+    @cached_property
+    def coord(self):
+        if self._coord_cached is None:
+            self._coord_cached = np.array(self._coord, dtype=np.float64)
+        return self._coord_cached
+    
+    @cached_property
+    def dof(self):
+        if self._dof_cached is None:
+            self._dof_cached = np.array(self._dof, dtype=np.bool_) 
+        return self._dof_cached
+    
+    @cached_property
+    def total_num_dof(self):
+        return self.dof.size
+    
+    @cached_property
+    def num_free_dof(self):
+        return np.count_nonzero(self.dof)
+    
+    @cached_property
+    def num_fixed_dof(self):
+        return self.total_num_dof - self.num_free_dof
+    
+    @cached_property
+    def code_number(self):
+        code_number            = np.empty(self.dof.shape, dtype=np.int64)
+        code_number[self.dof]  = np.arange(0, self.num_free_dof, 1, dtype=np.int64)
+        code_number[~self.dof] = np.arange(self.num_free_dof, self.total_num_dof, 1, dtype=np.int64)
+        return code_number
+    
+    @cached_property
+    def num_nodes(self):
+        return len(self._ids)
+    
+if __name__ == '__main__':
+    
+    pass
