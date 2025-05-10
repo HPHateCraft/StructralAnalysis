@@ -7,7 +7,9 @@ from Sections import Sections
 from TransMatrix import TransMatrix
 
 import numpy as np
-    
+from numpy.typing import NDArray
+
+
 class StiffnessMatrix:
     
     def __init__(self, nodes: Nodes, elements: LineElements, materials: Materials, sections: Sections, trans_matrix: TransMatrix):
@@ -16,10 +18,9 @@ class StiffnessMatrix:
         self._materials    = materials
         self._sections     = sections
         self._trans_matrix = trans_matrix
-
         
     @cached_property
-    def local_stiffness_matrix(self):
+    def _original_stiffness_matrix_in_elements_coord(self):
         k = np.zeros((self._elements.num_elements, 12, 12), dtype=np.float64)
         
         L  = self._elements.length
@@ -47,7 +48,6 @@ class StiffnessMatrix:
         k[:, 9, 9] = G*J/L
         
         beta_xz = 12*E*Iyy/(kappa*G*A*L2)
-        
         k[:, 2, 2] =  12*E*Iyy/(L3*(1 + beta_xz))
         k[:, 2, 8] = -k[:, 2, 2]
         k[:, 8, 2] = -k[:, 2, 2]
@@ -69,7 +69,6 @@ class StiffnessMatrix:
         k[:, 10, 4] = k[:, 4, 10]
         
         beta_xy = 12*E*Izz/(kappa*G*A*L2)
-        
         k[:, 1, 1] =  12*E*Izz/(L3*(1 + beta_xy))
         k[:, 1, 7] = -k[:, 1, 1]
         k[:, 7, 1] = -k[:, 1, 1]
@@ -93,61 +92,48 @@ class StiffnessMatrix:
         return k
     
     @cached_property
-    def global_stiffness_matrix(self):
-        return self._trans_matrix.trans_matrix_12x12_T@self.local_stiffness_matrix@self._trans_matrix.trans_matrix_12x12
+    def partial_fixity_matrix(self):
+        if self._elements.partial_fixity_indices.size == 0:
+            return
+        diag = np.arange(0, 12, 1, dtype=np.int64)
+        k_diag = self._original_stiffness_matrix_in_elements_coord[self._elements.partial_fixity_indices][:, diag, diag]
+        partial_fixity_matrix = np.zeros((self._elements.num_elements_with_partial_fixity, 12, 12), dtype=np.float64)
+        is_fixed = np.isnan(self._elements.partial_fixity_vector)
+        self._elements.partial_fixity_vector[is_fixed] = k_diag[is_fixed] * self._elements.PENALTY_NUMBER
+        partial_fixity_matrix[:, diag, diag] = self._elements.partial_fixity_vector
+        return partial_fixity_matrix
+    
+    @cached_property
+    def partial_fixity_matrix_inv(self):
+        if self._elements.partial_fixity_indices.size == 0:
+            return
+        return np.linalg.inv(self._original_stiffness_matrix_in_elements_coord[self._elements.partial_fixity_indices] + self.partial_fixity_matrix)
+    
+    @cached_property
+    def stiffness_matrix_in_elements_coord(self):
+        k = self._original_stiffness_matrix_in_elements_coord
+        if self._elements.partial_fixity_indices.size != 0:
+            k[self._elements.partial_fixity_indices] = k[self._elements.partial_fixity_indices]@self.partial_fixity_matrix_inv@self.partial_fixity_matrix
+        return k
+    
+    @cached_property
+    def stiffness_matrix_in_global_coord(self):
+        return self._trans_matrix.elements_direction_cosines_12x12_T @ self.stiffness_matrix_in_elements_coord @ self._trans_matrix.elements_direction_cosines_12x12 
 
     @cached_property
-    def nodes_code_number(self):
-        code_number                   = np.empty(self._nodes.dof.shape, dtype=np.int64)
-        code_number[self._nodes.dof]  = np.arange(0, self._nodes.num_free_dof, 1, dtype=np.int64)
-        code_number[~self._nodes.dof] = np.arange(self._nodes.num_free_dof, self._nodes.total_num_dof, 1, dtype=np.int64)
-        return code_number
-
-    @cached_property
-    def active_nodes_code_number(self):
-        return self.nodes_code_number < self._nodes.num_free_dof
-
-    @cached_property 
-    def elements_code_number(self):
-        return np.reshape(self.nodes_code_number[self._elements.nodes_indices], (self._elements.num_elements, 12))
-        
+    def stiffness_matrix_in_nodal_coord(self):
+        return self._trans_matrix.elements_nodes_direction_cosines_12x12_T @ self.stiffness_matrix_in_global_coord @ self._trans_matrix.elements_nodes_direction_cosines_12x12
+    
     @cached_property
     def structure_stiffness_matrix(self):
         s = np.zeros((self._nodes.num_free_dof, self._nodes.num_free_dof), dtype=np.float64)
-        k = self.global_stiffness_matrix
-        valid_indices = self.elements_code_number < self._nodes.num_free_dof
+        k = self.stiffness_matrix_in_nodal_coord
+        valid_indices = self._elements.code_number < self._nodes.num_free_dof
             
         for i in range(self._elements.num_elements):
-                s_cols = self.elements_code_number[i][valid_indices[i]]
+                s_cols = self._elements.code_number[i][valid_indices[i]]
                 s_rows = s_cols[:, None]
                 s[s_rows, s_cols] += k[i][valid_indices[i]][:, valid_indices[i]]
         
         return s
     
-    @cached_property
-    def elements_local_nodal_vector(self):
-        return np.zeros((self._elements.num_elements, 12), dtype=np.float64)
-    
-    @cached_property
-    def elements_global_nodal_vector(self):
-        return np.einsum('nji,nj->ni', self._trans_matrix.trans_matrix_12x12, self.elements_local_nodal_vector)
-    
-    @cached_property
-    def structure_force_vector(self):
-        f = np.zeros(self._nodes.num_free_dof, dtype=np.float64)
-        elements_code_number_flat = self.elements_code_number.ravel()
-        elements_global_nodal_vector_flat = self.elements_global_nodal_vector.ravel()
-        valid_indices = elements_code_number_flat < self._nodes.num_free_dof
-        np.add.at(f, elements_code_number_flat[valid_indices], elements_global_nodal_vector_flat[valid_indices])
-        return f 
-    
-    @cached_property
-    def structure_displacement_vector(self):
-        return np.zeros(self._nodes.num_free_dof, dtype=np.float64)
-    
-    @cached_property
-    def global_nodal_displacment(self):
-        return np.zeros((self._nodes.num_nodes, 6), dtype=np.float64)
-    
-    def nodal_Vector(self):
-        return np.zeros((self._nodes.num_nodes, 6), dtype=np.float64)
