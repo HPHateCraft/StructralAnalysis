@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "SpaceFrame"
+version = "0.0.1" # Keep this in sync with docs/conf.py or manage centrally
+authors = [
+  { name="HPHateCraft", email="your_email@example.com" }, # Optional email
+]
+description = "A package for structural analysis of space frames." # Optional
+
+requires-python = ">=3.8" # Specify compatible Python versions
+
+# Add any dependencies your ACTUAL SpaceFrame code needs here
+dependencies = [
+    "numpy",
+
+]
