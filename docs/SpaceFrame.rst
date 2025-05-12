@@ -44,13 +44,6 @@ SpaceFrame.Materials module
    :show-inheritance:
    :undoc-members:
 
-SpaceFrame.Matrix module
-------------------------
-
-.. automodule:: SpaceFrame.Matrix
-   :members:
-   :show-inheritance:
-   :undoc-members:
 
 SpaceFrame.Nodes module
 -----------------------
@@ -100,21 +93,6 @@ SpaceFrame.TransMatrix module
    :show-inheritance:
    :undoc-members:
 
-SpaceFrame.garbage module
--------------------------
-
-.. automodule:: SpaceFrame.garbage
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-SpaceFrame.test module
-----------------------
-
-.. automodule:: SpaceFrame.test
-   :members:
-   :show-inheritance:
-   :undoc-members:
 
 Module contents
 ---------------
