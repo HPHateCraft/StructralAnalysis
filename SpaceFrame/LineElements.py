@@ -11,101 +11,27 @@ from Sections import Sections
 import numpy as np
 from numpy.typing import NDArray
 
-class LineElements:
+class Elements:
     
     PENALTY_NUMBER = 1e6
     
     def __init__(self, nodes: Nodes, materials: Materials, sections: Sections):
-        self._ids              : list[int]       = []
-        
-        self._nodes_indices: list[list[float]] = []
-        self._length: list[float] = []
-        self._materials_indices: list[int] = []
-        self._sections_indices: list[int] = []
+        self.nodes = nodes
+        self.materials = materials
+        self.sections = sections
 
-        self._partial_fixity_vector = []
-        self._partial_fixity_indices = []
-        
-        self._roll_angle       : list[float]     = []
-       
-        self._direction_cosines = []
-        
-        self._id: int             = 0
-        
-        self._nodes     = nodes
-        self._materials = materials
-        self._sections  = sections
+        self._id = 0
+        self.ids = []
+        self.nodes_ids = []
+        self.materials_ids = []
+        self.sections_ids = []
         
     def _generate_id(self):
-        ID = self._id
-        self._ids.append(ID)
+        id_ = self._id
+        self.ids.append(id_)
         self._id += 1
-        return ID
-    
-    def _validate_nodei_id(self, id_: int):
-        if not isinstance(id_, int):
-            raise TypeError(f"Expected {int}. Got {type(id_)}")
-    
-    def _validate_nodej_id(self, id_: int):
-        if not isinstance(id_, int):
-            raise TypeError(f"Expected {int}. Got {type(id_)}")
-    
-    def _validate_material_name(self, name: str):
-        if not isinstance(name, str):
-            raise TypeError(f"Expected {str}. Got {type(name)}")
-    
-    def _validate_section_name(self, name: str):
-        if not isinstance(name, str):
-            raise TypeError(f"Expected {str}. Got {type(name)}")
-    
-    def _validate_roll_angle(self, roll_angle: float):
-        if not isinstance(roll_angle, float):
-            raise TypeError(f"Expected {float}. Got {type(roll_angle)}")
-        
-    def _compute_delta_coord(self, nodej_coord: NDArray[np.float64], nodei_coord: NDArray[np.float64]):
-        return nodej_coord - nodei_coord
-    
-    def _compute_length(self, delta_coord: NDArray[np.float64]):
-        return np.sqrt(np.sum(delta_coord**2))
-    
-    def _compute_unit_vector_x(self, length: np.float64, delta_coord: NDArray[np.float64]):
-        return delta_coord/length
-    
-    def _compute_default_unit_vector_z(self, unit_vector_x: NDArray[np.float64]):
-        if np.array_equal(np.abs(unit_vector_x), GlobalCoord.UNIT_VECTOR_Y):
-            return GlobalCoord.UNIT_VECTOR_Z
-        
-        z = np.cross(unit_vector_x, GlobalCoord.UNIT_VECTOR_Y)
-        z_norm = np.linalg.norm(z)
-        return z/z_norm
-    
-    def _compute_default_unit_vector_y(self, unit_vector_x: NDArray[np.float64], default_unit_vector_z: NDArray[np.float64]):
-        return np.cross(default_unit_vector_z, unit_vector_x)
-    
-    def _compute_roll_matrix(self, roll_angle: float):
-        roll_angle_rad = math.radians(roll_angle)
-        cos = math.cos(roll_angle_rad)
-        sin = math.sin(roll_angle_rad)
-        rx = [
-            [1.0,  0.0, 0.0],
-            [0.0,  cos, sin],
-            [0.0, -sin, cos]
-        ]
-        
-        return np.array(rx, dtype=np.float64)
-    
-    def _compute_default_direction_cosines(self, unit_vector_x: NDArray[np.float64], default_unit_vector_y: NDArray[np.float64], default_unit_vector_z: NDArray[np.float64]):
-        return np.array([unit_vector_x, default_unit_vector_y, default_unit_vector_z])
-    
-    def _compute_direction_cosines(self, length: float, delta_coord: NDArray[np.float64], roll_angle: float):
-        vec_x = self._compute_unit_vector_x(length, delta_coord)
-        vec_z = self._compute_default_unit_vector_z(vec_x)
-        vec_y = self._compute_default_unit_vector_y(vec_x, vec_z)
-        dc    = self._compute_default_direction_cosines(vec_x, vec_y, vec_z)
-        rx    = self._compute_roll_matrix(roll_angle)
-        return rx@dc
-    
-    
+        return id_
+   
     def find_index_by_id(self, id_: int):
         index = bisect.bisect_left(self._ids, id_)
         if index < len(self._ids) and self._ids[index] == id_:
@@ -115,27 +41,10 @@ class LineElements:
     
     def generate_element(self, nodei_id: int, nodej_id: int, material_name: str, section_name: str, roll_angle: float = 0.0):     
            
-        nodei_index = self._nodes.find_index_by_id(nodei_id)
-        nodej_index = self._nodes.find_index_by_id(nodej_id)
-        material_index = self._materials.find_index_by_name(material_name)
-        section_index = self._sections.find_index_by_name(section_name)
-        
         id_ = self._generate_id()
+        self.nodes_ids.append(nodei_id)
         
-        nodei_coord = self._nodes.coord[nodei_index]
-        nodej_coord = self._nodes.coord[nodej_index]
-        
-        delta_coord = self._compute_delta_coord(nodej_coord, nodei_coord)
-        L = self._compute_length(delta_coord)
-        
-        dc = self._compute_direction_cosines(L, delta_coord, roll_angle)
-
-        self._materials_indices.append(material_index)
-        self._sections_indices.append(section_index)
-        
-        self._length.append(L)
-        self._nodes_indices.append(np.array([nodei_index, nodej_index], dtype=np.int64))
-        self._direction_cosines.append(dc)
+         
         return id_
     
     def add_partial_fixity(
@@ -202,5 +111,19 @@ class LineElements:
     
     def ids(self):
         return self._ids
+    
+
+class ElementsManager:
+    
+    def __init__(self, elements: Elements):
+        self._elements = elements
+    
+    @cached_property
+    def nodes_indices(self):
+        return np.array(self._elements.nodes_indices, dtype=np.int64)
+
+    @cached_property
+    def coord(self):
+        return
     
     

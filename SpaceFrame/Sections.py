@@ -2,101 +2,183 @@ from functools import cached_property
 
 import numpy as np
 from numpy.typing import NDArray
+
 class Sections:
-
+    RECT_SECTION = 0
+    I_SECTION = 1
+    
+    RECT_HEIGHT = 0
+    RECT_WIDTH  = 1
+    
+    I_WEB_HEIGHT        = 0
+    I_WEB_WIDTH         = 1
+    I_TOP_FLANGE_HEIGHT = 2
+    I_TOP_FLANGE_WIDTH  = 3
+    I_BOT_FLANGE_HEIGHT = 4
+    I_BOT_FLANGE_WIDTH  = 5
+    
     def __init__(self):
-        self._names: list[str] = []
-
-        self._cross_section_area_yz: list[float] = []
-        self._moment_of_inertia_about_y: list[float] = []
-        self._moment_of_inertia_about_z: list[float] = []
-        self._torsional_constant: list[float] = []
-        self._shear_correction_factor: list[float] = []
-        self._dim_y: list[float] = []
-        self._dim_z: list[float] = []
-    
-    def _validate_name(self, name: str):
-        if not isinstance(name, str):
-            raise TypeError(f"Expected {str}. Got {type(name)}")  
-    
-    def _validate_dim_y(self, dim_y: float):
-        if not isinstance(dim_y, float):
-            raise ValueError(f"Expected {float}. Got {type(dim_y)}")      
-    
-    def _validate_dim_z(self, dim_z: float):
-        if not isinstance(dim_z, float):
-            raise ValueError(f"Expected {float}. Got {type(dim_z)}")      
-    
-    
-    def _compute_cross_section_area_yz(self, dim_y: float, dim_z: float):
-        return dim_y*dim_z
-    
-    def _compute_moment_of_inertia_about_y(self, dim_y: float, dim_z: float):
-        return dim_y*dim_z**3/12
-     
-    def _compute_moment_of_inertia_about_z(self, dim_y: float, dim_z: float):
-        return dim_z*dim_y**3/12
-     
-    def _compute_torsional_constant(self, dim_y: float, dim_z: float):
-        max_dim   = max(dim_y, dim_z)
-        min_dim   = min(dim_y, dim_z)
-        beta = 1/3 - 0.21*min_dim*(1 - (min_dim/max_dim)**4/12)/max_dim
-        return beta*max_dim*min_dim**3
-
-          
-    def find_index_by_name(self, name: str):
-        self._validate_name(name)
+        self.names     = []
+        self.type_     = []
+        self.rect_data = []
+        self.I_data    = []
         
-        try:
-            return self._names.index(name)
-        
-        except ValueError:
-            raise ValueError(f"Section with name: {name} wasn't found.")
-        
-    
-    def generate_section(self, name: str, dim_y: float, dim_z: float):        
-        self._validate_name(name)
-        self._validate_dim_y(dim_y)
-        self._validate_dim_z(dim_z)
-                
-        self._names.append(name)
-        self._cross_section_area_yz.append(self._compute_cross_section_area_yz(dim_y, dim_z))
-        self._moment_of_inertia_about_y.append(self._compute_moment_of_inertia_about_y(dim_y, dim_z))
-        self._moment_of_inertia_about_z.append(self._compute_moment_of_inertia_about_z(dim_y, dim_z))
-        self._torsional_constant.append(self._compute_torsional_constant(dim_y, dim_z))
-        self._shear_correction_factor.append(5/6)
-
+    def generate_rect_section(self, name: str, height: float, width: float):
+        self.type_.append(self.RECT_SECTION)
+        self.names.append(name)
+        self.rect_data.append([height, width])
         return name
 
-    def delete(self, name: str):
-        index = self.find_index_by_name(name)
-        self._names.pop(index)
+    def genereta_I_section(
+        self,
+        name: str,
+        web_height: float,
+        web_width: float,
+        top_flange_height: float,
+        top_flange_width: float,
+        bot_flange_height: float,
+        bot_flange_width: float
+    ):
+        self.type_.append(self.I_SECTION)
+        self.names.append(name)
+        self.I_data.append([web_height, web_width, top_flange_height, top_flange_width, bot_flange_height, bot_flange_width])
+        return name
 
+class SectionsManager:
+    
+    def __init__(self, sections: Sections):
+        self._sections = sections
+    
     @cached_property
     def names(self):
-        return self._names
+        return np.array(self._sections.names, dtype=np.str_)
     
     @cached_property
-    def cross_section_area_yz(self):
-        return np.array(self._cross_section_area_yz, dtype=np.float64)
+    def type_(self):
+        return np.array(self._sections.type_, dtype=np.int64)
     
+    @cached_property
+    def num_sections(self):
+        return self.names.size  
+    
+    @cached_property
+    def is_rect_section(self):
+        return self.type_ == Sections.RECT_SECTION
+    
+    @cached_property
+    def num_rect_sections(self):
+        return np.count_nonzero(self.is_rect_section)
+    
+    @cached_property
+    def rect_sections_data(self):
+        return np.array(self._sections.rect_data, dtype=np.float64)
+    
+    @cached_property
+    def is_I_section(self):
+        return self.type_ == Sections.I_SECTION
+    
+    @cached_property
+    def num_I_sections(self):
+        return np.count_nonzero(self.is_I_section)
+    
+    @cached_property
+    def I_sections_data(self):
+        return np.array(self._sections.I_data, dtype=np.float64)
+    
+    @cached_property
+    def cross_section_area(self):
+        return np.zeros(self.num_sections, dtype=np.float64)
+
     @cached_property
     def moment_of_inertia_about_y(self):
-        return np.array(self._moment_of_inertia_about_y, dtype=np.float64)
-    
+        return np.zeros(self.num_sections, dtype=np.float64)
+
     @cached_property
     def moment_of_inertia_about_z(self):
-        return np.array(self._moment_of_inertia_about_z, dtype=np.float64)
-    
+        return np.zeros(self.num_sections, dtype=np.float64)
+
     @cached_property
     def torsional_constant(self):
-        return np.array(self._torsional_constant, dtype=np.float64)
-    
+        return np.zeros(self.num_sections, dtype=np.float64)
+
     @cached_property
     def shear_correction_factor(self):
-        return np.array(self._shear_correction_factor, dtype=np.float64)
+        return np.zeros(self.num_sections, dtype=np.float64)
+    
+    def _cross_section_area_rect(self):
+        self.cross_section_area[self.is_rect_section] = self.rect_sections_data[:, Sections.RECT_HEIGHT]*self.rect_sections_data[:, Sections.RECT_WIDTH]
+    
+    def _moment_of_inertia_about_y_rect(self):
+        self.moment_of_inertia_about_y[self.is_rect_section] = self.rect_sections_data[:, Sections.RECT_HEIGHT]*self.rect_sections_data[:, Sections.RECT_WIDTH]**3/12
+
+    def _moment_of_inertia_about_z_rect(self):
+        self.moment_of_inertia_about_z[self.is_rect_section] = self.rect_sections_data[:, Sections.RECT_HEIGHT]**3*self.rect_sections_data[:, Sections.RECT_WIDTH]/12
+    
+    def _torsional_constant_rect(self):
+        max_dim = np.max(self.rect_sections_data, axis=1)
+        min_dim = np.min(self.rect_sections_data, axis=1)
+        beta = 1/3 - 0.21*min_dim*(1 - (min_dim/max_dim)**4/12)/max_dim
+        
+        self.torsional_constant[self.is_rect_section] = beta*max_dim*min_dim**3
+        
+    def _shear_correction_factor_rect(self):
+        self.shear_correction_factor[self.is_rect_section] = 5/6
+
+    def _cross_section_area_I(self):
+        area_of_top_flange = self.I_sections_data[:, Sections.I_TOP_FLANGE_HEIGHT]*self.I_sections_data[:, Sections.I_TOP_FLANGE_WIDTH]
+        area_of_bot_flange = self.I_sections_data[:, Sections.I_BOT_FLANGE_HEIGHT]*self.I_sections_data[:, Sections.I_BOT_FLANGE_WIDTH]
+        area_of_web = self.I_sections_data[:, Sections.I_WEB_HEIGHT]*self.I_sections_data[:, Sections.I_WEB_WIDTH]
+        self.cross_section_area[self.is_I_section] = area_of_top_flange + area_of_bot_flange + area_of_web        
+
+    def _moment_of_inertia_about_y_I(self):
+        moment_of_inertia_of_top_flange = self.I_sections_data[:, Sections.I_TOP_FLANGE_HEIGHT]*self.I_sections_data[:, Sections.I_TOP_FLANGE_WIDTH]**3/12
+        moment_of_inertia_of_bot_flange = self.I_sections_data[:, Sections.I_BOT_FLANGE_HEIGHT]*self.I_sections_data[:, Sections.I_BOT_FLANGE_WIDTH]**3/12
+        moment_of_inertia_of_web = self.I_sections_data[:, Sections.I_WEB_HEIGHT]*self.I_sections_data[:, Sections.I_WEB_WIDTH]**3/12
+        self.moment_of_inertia_about_y[self.is_I_section] = moment_of_inertia_of_top_flange + moment_of_inertia_of_bot_flange + moment_of_inertia_of_web 
+    
+    def _moment_of_inertia_about_z_I(self):
+        tfh = self.I_sections_data[:, Sections.I_TOP_FLANGE_HEIGHT]
+        tfw = self.I_sections_data[:, Sections.I_TOP_FLANGE_WIDTH]
+        bfh = self.I_sections_data[:, Sections.I_BOT_FLANGE_HEIGHT]
+        bfw = self.I_sections_data[:, Sections.I_BOT_FLANGE_WIDTH]
+        wh = self.I_sections_data[:, Sections.I_WEB_HEIGHT]
+        ww = self.I_sections_data[:, Sections.I_WEB_WIDTH]
+        
+        moment_of_inertia_of_top_flange = tfh**3*tfw/12
+        moment_of_inertia_of_bot_flange = bfh**3*bfw/12
+        moment_of_inertia_of_web = wh**3*ww/12
+        
+        area_of_top_flange = tfh*tfw
+        area_of_bot_flange = bfh*bfw
+        area_of_web = wh*ww
+        
+        center_of_gravity_y = (area_of_top_flange*(bfh + wh + tfh/2) + area_of_web*(bfh + wh/2) + area_of_bot_flange*bfh/2)/(area_of_top_flange + area_of_bot_flange + area_of_web)
+        
+        moment_of_inertia_of_top_flange += area_of_top_flange*(center_of_gravity_y - (bfh + wh + tfh/2))**2 
+        moment_of_inertia_of_bot_flange += area_of_bot_flange*(center_of_gravity_y - bfh/2)**2
+        moment_of_inertia_of_web += area_of_web*(center_of_gravity_y - (bfh + wh/2))**2
+        
+        self.moment_of_inertia_about_z[self.is_I_section] = moment_of_inertia_of_top_flange + moment_of_inertia_of_bot_flange + moment_of_inertia_of_web 
+
     
     
 if __name__ == '__main__':
     
-    pass
+    sections = Sections()
+    rect = sections.generate_rect_section("asd", 1, 2)
+    rect = sections.generate_rect_section("asd", 1, 2)
+    rect = sections.generate_rect_section("asd", 1, 2)
+    rect = sections.generate_rect_section("asd", 1, 2)
+    
+    I = sections.genereta_I_section("qqq", 0.6-0.02, 0.05, 0.01, 0.3, 0.01, 0.3)
+    I = sections.genereta_I_section("qqq", 1, 1, 1, 1, 1, 1)
+    I = sections.genereta_I_section("qqq", 1, 1, 1, 1, 1, 1)
+    I = sections.genereta_I_section("qqq", 1, 1, 1, 1, 1, 1)
+    
+    sections_manager = SectionsManager(sections)
+    sections_manager._moment_of_inertia_about_y_rect()
+    sections_manager._moment_of_inertia_about_z_I()
+    sections_manager._moment_of_inertia_about_y_I()
+    sections_manager._cross_section_area_I()
+    print(sections_manager.moment_of_inertia_about_y)
+    
