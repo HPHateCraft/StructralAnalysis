@@ -4,58 +4,220 @@ import numpy as np
 from numpy.typing import NDArray
 
 class Sections:
+    
     RECT_SECTION = 0
     I_SECTION = 1
-    
-    RECT_HEIGHT = 0
-    RECT_WIDTH  = 1
-    
-    I_WEB_HEIGHT        = 0
-    I_WEB_WIDTH         = 1
-    I_TOP_FLANGE_HEIGHT = 2
-    I_TOP_FLANGE_WIDTH  = 3
-    I_BOT_FLANGE_HEIGHT = 4
-    I_BOT_FLANGE_WIDTH  = 5
+    names = []
+    type_ = []
+
+
+class RectSections:
     
     def __init__(self):
-        self.names     = []
-        self.type_     = []
-        self.rect_data = []
-        self.I_data    = []
+        self.height = []
+        self.width = []
         
-    def generate_rect_section(self, name: str, height: float, width: float):
-        self.type_.append(self.RECT_SECTION)
-        self.names.append(name)
-        self.rect_data.append([height, width])
+    def generate(self, name: str, height: float, width: float):
+        Sections.type_.append(Sections.RECT_SECTION)
+        Sections.names.append(name)
+        self.height.append(height)
+        self.width.append(width)
+        
         return name
 
-    def genereta_I_section(
-        self,
-        name: str,
-        web_height: float,
-        web_width: float,
-        top_flange_height: float,
-        top_flange_width: float,
-        bot_flange_height: float,
-        bot_flange_width: float
-    ):
-        self.type_.append(self.I_SECTION)
-        self.names.append(name)
-        self.I_data.append([web_height, web_width, top_flange_height, top_flange_width, bot_flange_height, bot_flange_width])
+
+class Isections:
+    
+    def __init__(self):
+        self.height = []
+        self.web_width = []
+        self.top_flange_height = []
+        self.top_flange_width = []
+        self.bot_flange_height = []
+        self.bot_flange_width = []
+
+    def generate(self, name: str, height: float, web_width: float, top_flange_height: float, top_flange_width: float, bot_flange_height: float, bot_flange_width: float):
+        Sections.type_.append(Sections.I_SECTION)
+        Sections.names.append(name)
+        self.height.append(height)
+        self.web_width.append(web_width)
+        self.top_flange_height.append(top_flange_height)
+        self.top_flange_width.append(top_flange_width)
+        self.bot_flange_height.append(bot_flange_height)
+        self.bot_flange_width.append(bot_flange_width)
+        
         return name
 
+
+class RectSectionsManager:
+    
+    def __init__(self, rect_sections: RectSections):
+        self._rect_sections = rect_sections
+        
+    @cached_property
+    def height(self):
+        return np.array(self._rect_sections.height, dtype=np.float64)
+
+    @cached_property
+    def width(self):
+        return np.array(self._rect_sections.width, dtype=np.float64)
+    
+    @cached_property
+    def num_sections(self):
+        return self.height.size
+    
+    @cached_property
+    def cross_section_area(self):
+        return self.height*self.width
+
+    @cached_property
+    def moment_of_inertia_about_y(self):
+        return self.height*self.width**3/12
+
+    @cached_property
+    def moment_of_inertia_about_z(self):
+        return self.height**3*self.width/12
+
+    @cached_property
+    def torsional_constant(self):
+        max_dim = np.maximum(self.height, self.width)
+        min_dim = np.minimum(self.height, self.width)
+        beta = 1/3 - 0.21*min_dim*(1 - (min_dim/max_dim)**4/12)/max_dim
+      
+        return beta*max_dim*min_dim**3
+    
+    @cached_property
+    def shear_correction_factor(self):
+        return np.full(self.num_sections, 5/6, dtype=np.float64)
+
+
+class ISectionsManager:
+    
+    def __init__(self, I_sections: Isections):
+        self._I_sections = I_sections
+    
+    @cached_property
+    def height(self):
+        return np.array(self._I_sections.height, dtype=np.float64)
+
+    @cached_property
+    def web_width(self):
+        return np.array(self._I_sections.web_width, dtype=np.float64)
+
+    @cached_property
+    def top_flange_height(self):
+        return np.array(self._I_sections.top_flange_height, dtype=np.float64)
+
+    @cached_property
+    def top_flange_width(self):
+        return np.array(self._I_sections.top_flange_width, dtype=np.float64)
+
+    @cached_property
+    def bot_flange_height(self):
+        return np.array(self._I_sections.bot_flange_height, dtype=np.float64)
+
+    @cached_property
+    def bot_flange_width(self):
+        return np.array(self._I_sections.bot_flange_width, dtype=np.float64)
+
+    @cached_property
+    def num_sections(self):
+        return self.height.size
+    
+    @cached_property
+    def web_height(self):
+        return self.height - (self.top_flange_height + self.bot_flange_height)
+    
+    @cached_property
+    def top_flange_cross_section_area(self):
+        return self.top_flange_height*self.top_flange_width
+
+    @cached_property
+    def web_cross_section_area(self):
+        return self.web_height*self.web_width
+
+    @cached_property
+    def bot_flange_cross_section_area(self):
+        return self.bot_flange_height*self.bot_flange_width
+
+    @cached_property
+    def cross_section_area(self):
+        return self.top_flange_cross_section_area + self.web_cross_section_area + self.bot_flange_cross_section_area
+
+    @cached_property
+    def moment_of_inertia_about_y(self):
+        Iyy_top_flange = self.top_flange_height*self.top_flange_width**3/12
+        Iyy_web = self.web_height*self.web_width**3/12
+        Iyy_bot_flange = self.bot_flange_height*self.bot_flange_width**3/12
+        
+        return Iyy_top_flange + Iyy_web + Iyy_bot_flange
+
+    @cached_property
+    def top_flange_center_of_gravity_y(self):
+        return self.height - self.top_flange_height/2
+    
+    @cached_property
+    def web_center_of_gravity_y(self):
+        return self.height - self.top_flange_height - self.web_height/2
+    
+    @cached_property
+    def bot_flange_center_of_gravity_y(self):
+        return self.bot_flange_height/2
+    
+    @cached_property
+    def center_of_gravity_y(self):
+        return (
+            (self.top_flange_cross_section_area*self.top_flange_center_of_gravity_y +
+             self.web_cross_section_area*self.web_center_of_gravity_y +
+             self.bot_flange_cross_section_area*self.bot_flange_center_of_gravity_y) /
+             self.cross_section_area 
+        )
+
+    @cached_property
+    def moment_of_inertia_about_z(self):
+        Izz_top_flange = self.top_flange_height**3*self.top_flange_width/12
+        Izz_web = self.web_height**3*self.web_width/12
+        Izz_bot_flange = self.bot_flange_height**3*self.bot_flange_width/12
+        
+        Izz_top_flange += self.top_flange_cross_section_area*(self.center_of_gravity_y - self.top_flange_center_of_gravity_y)**2
+        Izz_web += self.web_cross_section_area*(self.center_of_gravity_y - self.web_center_of_gravity_y)**2
+        Izz_bot_flange += self.bot_flange_cross_section_area*(self.center_of_gravity_y - self.bot_flange_center_of_gravity_y)**2
+        
+        return Izz_top_flange + Izz_web + Izz_bot_flange
+    
+    def torsional_constant_of_rect(self, height: NDArray, width: NDArray):
+        max_dim = np.maximum(height, width)
+        min_dim = np.minimum(height, width)
+        beta = 1/3 - 0.21*min_dim*(1 - (min_dim/max_dim)**4/12)/max_dim
+      
+        return beta*max_dim*min_dim**3
+    
+    @cached_property
+    def torsional_constant(self):
+        top_flange_torsional_constant = self.torsional_constant_of_rect(self.top_flange_height, self.top_flange_width)
+        web_torsional_constant = self.torsional_constant_of_rect(self.web_height, self.web_width)
+        bot_flange_torsional_constant = self.torsional_constant_of_rect(self.bot_flange_height, self.bot_flange_width)
+        
+        return top_flange_torsional_constant + web_torsional_constant + bot_flange_torsional_constant
+    
+    @cached_property
+    def shear_correction_factor(self):
+        return self.web_cross_section_area/self.cross_section_area
+
+    
 class SectionsManager:
     
-    def __init__(self, sections: Sections):
-        self._sections = sections
+    def __init__(self, rect_sections_manager: RectSectionsManager, I_sections_manager: ISectionsManager):
+        self._rect_sections_manager = rect_sections_manager
+        self._I_sections_manager = I_sections_manager
     
     @cached_property
     def names(self):
-        return np.array(self._sections.names, dtype=np.str_)
+        return np.array(Sections.names, dtype=np.str_)
     
     @cached_property
     def type_(self):
-        return np.array(self._sections.type_, dtype=np.int64)
+        return np.array(Sections.type_, dtype=np.int64)
     
     @cached_property
     def num_sections(self):
@@ -66,119 +228,63 @@ class SectionsManager:
         return self.type_ == Sections.RECT_SECTION
     
     @cached_property
-    def num_rect_sections(self):
-        return np.count_nonzero(self.is_rect_section)
-    
-    @cached_property
-    def rect_sections_data(self):
-        return np.array(self._sections.rect_data, dtype=np.float64)
-    
-    @cached_property
     def is_I_section(self):
         return self.type_ == Sections.I_SECTION
     
     @cached_property
-    def num_I_sections(self):
-        return np.count_nonzero(self.is_I_section)
-    
-    @cached_property
-    def I_sections_data(self):
-        return np.array(self._sections.I_data, dtype=np.float64)
-    
-    @cached_property
     def cross_section_area(self):
-        return np.zeros(self.num_sections, dtype=np.float64)
+        A = np.zeros(self.num_sections, dtype=np.float64)
+        A[self.is_rect_section] = self._rect_sections_manager.cross_section_area
+        A[self.is_I_section] = self._I_sections_manager.cross_section_area
+        return A
 
     @cached_property
     def moment_of_inertia_about_y(self):
-        return np.zeros(self.num_sections, dtype=np.float64)
+        Iyy = np.zeros(self.num_sections, dtype=np.float64)
+        Iyy[self.is_rect_section] = self._rect_sections_manager.moment_of_inertia_about_y
+        Iyy[self.is_I_section] = self._I_sections_manager.moment_of_inertia_about_y
+        return Iyy
 
     @cached_property
     def moment_of_inertia_about_z(self):
-        return np.zeros(self.num_sections, dtype=np.float64)
+        Izz = np.zeros(self.num_sections, dtype=np.float64)
+        Izz[self.is_rect_section] = self._rect_sections_manager.moment_of_inertia_about_z
+        Izz[self.is_I_section] = self._I_sections_manager.moment_of_inertia_about_z
+        return Izz
 
     @cached_property
     def torsional_constant(self):
-        return np.zeros(self.num_sections, dtype=np.float64)
+        J = np.zeros(self.num_sections, dtype=np.float64)
+        J[self.is_rect_section] = self._rect_sections_manager.torsional_constant
+        J[self.is_I_section] = self._I_sections_manager.torsional_constant
+        return J
 
     @cached_property
     def shear_correction_factor(self):
-        return np.zeros(self.num_sections, dtype=np.float64)
+        kappa = np.zeros(self.num_sections, dtype=np.float64)
+        kappa[self.is_rect_section] = self._rect_sections_manager.shear_correction_factor
+        kappa[self.is_I_section] = self._I_sections_manager.shear_correction_factor
+        return kappa
     
-    def _cross_section_area_rect(self):
-        self.cross_section_area[self.is_rect_section] = self.rect_sections_data[:, Sections.RECT_HEIGHT]*self.rect_sections_data[:, Sections.RECT_WIDTH]
-    
-    def _moment_of_inertia_about_y_rect(self):
-        self.moment_of_inertia_about_y[self.is_rect_section] = self.rect_sections_data[:, Sections.RECT_HEIGHT]*self.rect_sections_data[:, Sections.RECT_WIDTH]**3/12
-
-    def _moment_of_inertia_about_z_rect(self):
-        self.moment_of_inertia_about_z[self.is_rect_section] = self.rect_sections_data[:, Sections.RECT_HEIGHT]**3*self.rect_sections_data[:, Sections.RECT_WIDTH]/12
-    
-    def _torsional_constant_rect(self):
-        max_dim = np.max(self.rect_sections_data, axis=1)
-        min_dim = np.min(self.rect_sections_data, axis=1)
-        beta = 1/3 - 0.21*min_dim*(1 - (min_dim/max_dim)**4/12)/max_dim
-        
-        self.torsional_constant[self.is_rect_section] = beta*max_dim*min_dim**3
-        
-    def _shear_correction_factor_rect(self):
-        self.shear_correction_factor[self.is_rect_section] = 5/6
-
-    def _cross_section_area_I(self):
-        area_of_top_flange = self.I_sections_data[:, Sections.I_TOP_FLANGE_HEIGHT]*self.I_sections_data[:, Sections.I_TOP_FLANGE_WIDTH]
-        area_of_bot_flange = self.I_sections_data[:, Sections.I_BOT_FLANGE_HEIGHT]*self.I_sections_data[:, Sections.I_BOT_FLANGE_WIDTH]
-        area_of_web = self.I_sections_data[:, Sections.I_WEB_HEIGHT]*self.I_sections_data[:, Sections.I_WEB_WIDTH]
-        self.cross_section_area[self.is_I_section] = area_of_top_flange + area_of_bot_flange + area_of_web        
-
-    def _moment_of_inertia_about_y_I(self):
-        moment_of_inertia_of_top_flange = self.I_sections_data[:, Sections.I_TOP_FLANGE_HEIGHT]*self.I_sections_data[:, Sections.I_TOP_FLANGE_WIDTH]**3/12
-        moment_of_inertia_of_bot_flange = self.I_sections_data[:, Sections.I_BOT_FLANGE_HEIGHT]*self.I_sections_data[:, Sections.I_BOT_FLANGE_WIDTH]**3/12
-        moment_of_inertia_of_web = self.I_sections_data[:, Sections.I_WEB_HEIGHT]*self.I_sections_data[:, Sections.I_WEB_WIDTH]**3/12
-        self.moment_of_inertia_about_y[self.is_I_section] = moment_of_inertia_of_top_flange + moment_of_inertia_of_bot_flange + moment_of_inertia_of_web 
-    
-    def _moment_of_inertia_about_z_I(self):
-        tfh = self.I_sections_data[:, Sections.I_TOP_FLANGE_HEIGHT]
-        tfw = self.I_sections_data[:, Sections.I_TOP_FLANGE_WIDTH]
-        bfh = self.I_sections_data[:, Sections.I_BOT_FLANGE_HEIGHT]
-        bfw = self.I_sections_data[:, Sections.I_BOT_FLANGE_WIDTH]
-        wh = self.I_sections_data[:, Sections.I_WEB_HEIGHT]
-        ww = self.I_sections_data[:, Sections.I_WEB_WIDTH]
-        
-        moment_of_inertia_of_top_flange = tfh**3*tfw/12
-        moment_of_inertia_of_bot_flange = bfh**3*bfw/12
-        moment_of_inertia_of_web = wh**3*ww/12
-        
-        area_of_top_flange = tfh*tfw
-        area_of_bot_flange = bfh*bfw
-        area_of_web = wh*ww
-        
-        center_of_gravity_y = (area_of_top_flange*(bfh + wh + tfh/2) + area_of_web*(bfh + wh/2) + area_of_bot_flange*bfh/2)/(area_of_top_flange + area_of_bot_flange + area_of_web)
-        
-        moment_of_inertia_of_top_flange += area_of_top_flange*(center_of_gravity_y - (bfh + wh + tfh/2))**2 
-        moment_of_inertia_of_bot_flange += area_of_bot_flange*(center_of_gravity_y - bfh/2)**2
-        moment_of_inertia_of_web += area_of_web*(center_of_gravity_y - (bfh + wh/2))**2
-        
-        self.moment_of_inertia_about_z[self.is_I_section] = moment_of_inertia_of_top_flange + moment_of_inertia_of_bot_flange + moment_of_inertia_of_web 
-
     
     
 if __name__ == '__main__':
     
-    sections = Sections()
-    rect = sections.generate_rect_section("asd", 1, 2)
-    rect = sections.generate_rect_section("asd", 1, 2)
-    rect = sections.generate_rect_section("asd", 1, 2)
-    rect = sections.generate_rect_section("asd", 1, 2)
+    rect_sections = RectSections()
+    sec1 = rect_sections.generate("B200x600", 0.6, 0.2)
+    sec2 = rect_sections.generate("B300x600", 0.6, 0.3)
     
-    I = sections.genereta_I_section("qqq", 0.6-0.02, 0.05, 0.01, 0.3, 0.01, 0.3)
-    I = sections.genereta_I_section("qqq", 1, 1, 1, 1, 1, 1)
-    I = sections.genereta_I_section("qqq", 1, 1, 1, 1, 1, 1)
-    I = sections.genereta_I_section("qqq", 1, 1, 1, 1, 1, 1)
+    rect_sections_manager = RectSectionsManager(rect_sections)
     
-    sections_manager = SectionsManager(sections)
-    sections_manager._moment_of_inertia_about_y_rect()
-    sections_manager._moment_of_inertia_about_z_I()
-    sections_manager._moment_of_inertia_about_y_I()
-    sections_manager._cross_section_area_I()
-    print(sections_manager.moment_of_inertia_about_y)
+    I_sections = Isections()
+    sec3 = I_sections.generate("I1", 0.6, 0.05, 0.01, 0.3, 0.01, 0.3)
+    sec4 = I_sections.generate("I2", 0.6, 0.05, 0.01, 0.3, 0.05, 0.15)
+    
+    I_sections_manager = ISectionsManager(I_sections)
+    sec5 = rect_sections.generate("sad", 1, 1)
+    
+    sections_manager = SectionsManager(rect_sections_manager, I_sections_manager)
+    
+    print(sections_manager.torsional_constant)
+    
     

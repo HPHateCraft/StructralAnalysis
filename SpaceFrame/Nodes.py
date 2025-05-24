@@ -28,7 +28,6 @@ class Nodes:
         self.pitch_angle_deg = []
         self.yaw_angle_deg = []
         
-        
     def _generate_id(self):
         id_ = self._id
         self.ids.append(id_)
@@ -65,41 +64,13 @@ class Nodes:
         self.yaw_angle_deg[index] = rz
         
 
-    
-    
-    
-    @cached_property
-    def total_num_dof(self):
-        return self.dof.size
-    
-    @cached_property
-    def num_free_dof(self):
-        return np.count_nonzero(self.dof)
-    
-    @cached_property
-    def num_fixed_dof(self):
-        return self.total_num_dof - self.num_free_dof
-        
-    @cached_property
-    def num_nodes(self):
-        return len(self._ids)
-    
-    @cached_property
-    def code_number(self):
-        code_number = np.empty((self.num_nodes, 6), dtype=np.int64)
-        code_number[self.dof] = np.arange(0, self.num_free_dof, 1, dtype=np.int64)
-        code_number[~self.dof] = np.arange(self.num_free_dof, self.total_num_dof, 1, dtype=np.int64)
-        return code_number
-
-    @cached_property
-    def directions_cosines(self):
-        return np.array(self._directions_cosines, dtype=np.float64)
-
-
 class NodesManager:
     
     def __init__(self, nodes: Nodes):
         self._nodes = nodes
+    
+    def find_index_by_id(self, id_):
+        return np.searchsorted(self.ids, id_)
     
     @cached_property
     def ids(self):
@@ -137,6 +108,14 @@ class NodesManager:
     def num_nodes(self):
         return self.ids.size
 
+    @cached_property
+    def total_num_dof(self):
+        return self.dof.size
+    
+    @cached_property
+    def num_free_dof(self):
+        return np.count_nonzero(self.dof)
+    
     @cached_property
     def rotation_order(self):
         return np.array(self._nodes.rotation_order, dtype=np.int64)
@@ -233,15 +212,23 @@ class NodesManager:
     def unit_vector_z(self):
         return self.direction_cosines[:, 2, :]
     
+    
+    @cached_property
+    def code_number(self):
+        code_number = np.empty((self.num_nodes, 6), dtype=np.int64)
+        code_number[self.dof] = np.arange(0, self.num_free_dof, 1, dtype=np.int64)
+        code_number[~self.dof] = np.arange(self.num_free_dof, self.total_num_dof, 1, dtype=np.int64)
+        return code_number
+    
 if __name__ == '__main__':
     nodes = Nodes()
     node1 = nodes.generate_node(0.0, 0.0, 0.0)
     node2 = nodes.generate_node(6.0, 0.0, 0.0)
-    node3 = nodes.generate_node(6.0, 0.0, 0.0)
+    node3 = nodes.generate_node(6.0, 0.0, 0.0, False, False)
     node4 = nodes.generate_node(6.0, 0.0, 0.0)
     node5 = nodes.generate_node(12.0, 0.0, 0.0)
     
     nodes.change_axes(node1, rotation_order=nodes.R_YZX, rx=0, ry=45, rz=45)
     # print(rx@rz@ry)
     nodes_manager = NodesManager(nodes)
-    print(nodes_manager.unit_vector_y)
+    print(nodes_manager.dof)
